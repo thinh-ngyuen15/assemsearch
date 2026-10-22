@@ -1,0 +1,44 @@
+[project]
+name = "assemsearch"
+dynamic = ["version"]
+description = "Search the assembly of any binary: disassembler-grade search for Mach-O and ELF (arm64, x86-64), with an MCP server for AI agents"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Thinh Nguyen" }]
+requires-python = ">=3.10"
+keywords = ["reverse-engineering", "disassembler", "binary-analysis", "mcp", "mcp-server", "claude", "ai-agents",
+            "mach-o", "elf", "arm64", "x86-64", "objective-c", "swift", "capstone", "ghidra", "ida", "security"]
+classifiers = [
+    "Environment :: Console",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Disassemblers",
+    "Topic :: Security",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+]
+dependencies = ["capstone>=5.0"]
+
+[project.scripts]
+assemsearch = "assemsearch.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/assemsearch/__init__.py"
+
+[tool.hatch.build.targets.sdist]
+include = ["src/assemsearch", "tests", "docs", "README.md", "LICENSE", "pyproject.toml", "install.sh"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/assemsearch"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

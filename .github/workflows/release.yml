@@ -1,0 +1,73 @@
+# Push a tag like v0.1.0 to build the wheel and standalone executables and publish a GitHub
+# Release with them. Publishing to PyPI runs only when the repository variable
+# PUBLISH_TO_PYPI is "true" and PyPI trusted publishing is set up (see docs/development.md).
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync && uv run pytest -q
+      - run: uv build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package
+          path: dist/
+
+  executable:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            asset: assemsearch-macos-arm64
+          - os: ubuntu-latest
+            asset: assemsearch-linux-x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+      - run: tools/build_binary.sh && mv dist/assemsearch "dist/${{ matrix.asset }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+
+  github-release:
+    needs: [package, executable]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+
+  pypi:
+    needs: [package]
+    if: vars.PUBLISH_TO_PYPI == 'true'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: package
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1

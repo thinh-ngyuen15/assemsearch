@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Build output (attach dist/ files to a GitHub Release instead of committing them)
+build/
+dist/
+*.spec
+
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# assemsearch databases saved next to analysed binaries
+*.asdb
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+*.swp

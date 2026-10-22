@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="386" viewBox="0 0 900 386" role="img" aria-label="assemsearch finding the function that prints ls usage">
+<rect width="100%" height="100%" rx="10" fill="#0d1117"/>
+<rect width="100%" height="36" rx="10" fill="#161b22"/><rect y="26" width="100%" height="10" fill="#161b22"/>
+<circle cx="20" cy="18" r="6" fill="#ff5f57"/><circle cx="40" cy="18" r="6" fill="#febc2e"/><circle cx="60" cy="18" r="6" fill="#28c840"/>
+<text x="450" y="23" fill="#8b949e" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" text-anchor="middle">assemsearch — from a string to the code that uses it</text>
+<g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="14" xml:space="preserve">
+<text xml:space="preserve" style="white-space:pre" x="20" y="58"><tspan fill="#8b949e">$ </tspan><tspan fill="#e6edf3">assemsearch symbols /bin/ls usage --mode strings</tspan></text>
+<text xml:space="preserve" style="white-space:pre" x="20" y="80"><tspan fill="#79c0ff">0x100004e06  </tspan><tspan fill="#8b949e">1  </tspan><tspan fill="#f2cc60">usage: ls [-@ABCFGHILOPRSTUWXabcdefghiklmnopqrstuvwxy1%%,] …</tspan></text>
+<text xml:space="preserve" style="white-space:pre" x="20" y="124"><tspan fill="#8b949e">$ </tspan><tspan fill="#e6edf3">assemsearch xrefs /bin/ls 0x100004e06</tspan></text>
+<text xml:space="preserve" style="white-space:pre" x="20" y="146"><tspan fill="#79c0ff">0x100004308  </tspan><tspan fill="#7ee787">sub_1000042ec+28</tspan><tspan fill="#8b949e"> (in sub_1000042ec)</tspan></text>
+<text xml:space="preserve" style="white-space:pre" x="20" y="190"><tspan fill="#8b949e">$ </tspan><tspan fill="#e6edf3">assemsearch open /bin/ls -c </tspan><tspan fill="#f2cc60">&quot;goto 0x100004308&quot;</tspan><tspan fill="#e6edf3"> -c </tspan><tspan fill="#f2cc60">&quot;where 4&quot;</tspan></text>
+<text xml:space="preserve" style="white-space:pre" x="20" y="212"><tspan fill="#8b949e">0000000100004308  </tspan><tspan fill="#ff7b72">add  </tspan><tspan fill="#e6edf3">x1, x1, #0xe06    </tspan><tspan fill="#8b949e">; &quot;usage: ls [-@ABCF…&quot;</tspan></text>
+<text xml:space="preserve" style="white-space:pre" x="20" y="234"><tspan fill="#8b949e">000000010000430c  </tspan><tspan fill="#ff7b72">bl   </tspan><tspan fill="#7ee787">imp___stubs__fprintf</tspan></text>
+<text xml:space="preserve" style="white-space:pre" x="20" y="256"><tspan fill="#8b949e">0000000100004310  </tspan><tspan fill="#ff7b72">mov  </tspan><tspan fill="#e6edf3">w0, #1</tspan></text>
+<text xml:space="preserve" style="white-space:pre" x="20" y="278"><tspan fill="#8b949e">0000000100004314  </tspan><tspan fill="#ff7b72">bl   </tspan><tspan fill="#7ee787">imp___stubs__exit</tspan></text>
+<text xml:space="preserve" style="white-space:pre" x="20" y="322"><tspan fill="#8b949e">$ </tspan><tspan fill="#e6edf3">assemsearch find /bin/ls --mode regex </tspan><tspan fill="#f2cc60">&quot;fd7b..a9&quot;</tspan><tspan fill="#e6edf3"> | wc -l</tspan><tspan fill="#8b949e">     # every arm64 prologue</tspan></text>
+<text xml:space="preserve" style="white-space:pre" x="20" y="344"><tspan fill="#e6edf3">      61</tspan></text>
+</g>
+</svg>
