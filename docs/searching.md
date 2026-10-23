@@ -138,7 +138,7 @@ necessarily next to each other. Each result gets a score, and lower is better:
 | Score | Meaning | `vlic` against `_validate_license` |
 |---|---|---|
 | 1 | The pattern appears as is (ignoring case) | |
-| k | The pattern's letters appear in k separate runs | `v`·`li`…`c`: 3 |
+| k | The pattern's letters appear in k separate runs at best | `v`…`lic`: 2 |
 | no result | Letters missing or out of order | |
 
 Results are sorted by score. `--strict` (one-shot) or `prefs fuzzy off` (shell) switches to

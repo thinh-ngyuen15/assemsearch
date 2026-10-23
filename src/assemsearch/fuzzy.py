@@ -16,51 +16,103 @@ HIGHLIGHT = "\x1b[1;33m"
 RESET = "\x1b[0m"
 
 
+_NONE = 1 << 30  # no way to match
+
+
+def _fold(text: str) -> str:
+    """Upper case, one character per character (``ß`` stays ``ß``), so indices still match ``text``."""
+    upper = text.upper()
+    if len(upper) == len(text):  # no character expanded (each maps to at least one)
+        return upper
+    return "".join(u if len(u := c.upper()) == 1 else c for c in text)
+
+
+def _is_subsequence(n: str, p: str) -> bool:
+    it = iter(n)
+    return all(ch in it for ch in p)
+
+
+def _runs(n: str, p: str) -> tuple[int, list[list[int]]]:
+    """Fewest contiguous runs of ``n`` that spell ``p`` in order, and the DP rows for backtracking.
+
+    ``rows[i][j]``: fewest runs matching ``p[:j]`` with ``p[j - 1]`` matched at ``n[i]``.
+    """
+    m = len(p)
+    where: dict[str, list[int]] = {}  # character -> the pattern positions holding it
+    for j, ch in enumerate(p):
+        where.setdefault(ch, []).append(j)
+    best = [0] + [_NONE] * m  # fewest runs matching p[:j] within the characters seen so far
+    empty = [_NONE] * (m + 1)  # shared by characters that are not in the pattern
+    previous = empty
+    rows = []
+    for ch in n:
+        positions = where.get(ch)
+        if positions is None:
+            previous = empty
+            rows.append(empty)
+            continue
+        row = empty.copy()
+        for j in positions:
+            row[j + 1] = min(previous[j], best[j] + 1)  # continue the run, or start one
+        for j in positions:  # after the whole row: it is computed from the previous characters only
+            if row[j + 1] < best[j + 1]:
+                best[j + 1] = row[j + 1]
+        previous = row
+        rows.append(row)
+    return best[m], rows
+
+
+def _fuzzy(n: str, p: str) -> int:
+    """``fuzzy_score`` of already folded strings."""
+    if p in n:
+        return 1
+    if not _is_subsequence(n, p):
+        return 0
+    return _runs(n, p)[0]
+
+
 def strict_score(name: str, pattern: str) -> int:
-    return 1 if pattern.casefold() in name.casefold() else 0
+    return 1 if _fold(pattern) in _fold(name) else 0
 
 
 def fuzzy_score(name: str, pattern: str) -> int:
-    if pattern.upper() in name.upper():
-        return 1
-    n, p = name.upper(), pattern.upper()
-    runs = j = 0
-    prev_matched = False
-    for ch in n:
-        if j >= len(p):
-            break
-        matched = ch == p[j]
-        if matched and not prev_matched:
-            runs += 1
-        if matched:
-            j += 1
-        prev_matched = matched
-    return runs if j == len(p) else 0
+    return _fuzzy(_fold(name), _fold(pattern))
 
 
 def score(name: str, pattern: str, fuzzy: bool = True) -> int:
     """``-[NSString scoreForMatchingPattern:fuzzy:]``."""
     if not pattern:
         return 1
-    if pattern.upper() in name.upper():
+    n, p = _fold(name), _fold(pattern)
+    if p in n:
         return 1
-    return fuzzy_score(name, pattern) if fuzzy else strict_score(name, pattern)
+    return _fuzzy(n, p) if fuzzy else 0
 
 
 def matched_positions(name: str, pattern: str) -> list[int]:
-    """Indices of ``name`` characters that the pattern matched (for highlighting)."""
+    """Indices of ``name`` characters that the pattern matched (for highlighting), in the fewest runs."""
     if not pattern:
         return []
-    n, p = name.upper(), pattern.upper()
+    n, p = _fold(name), _fold(pattern)
     at = n.find(p)
     if at >= 0:
         return list(range(at, at + len(p)))
-    positions, j = [], 0
-    for i, ch in enumerate(n):
-        if j < len(p) and ch == p[j]:
-            positions.append(i)
-            j += 1
-    return positions if j == len(p) else []
+    if not _is_subsequence(n, p):
+        return []
+    cost, rows = _runs(n, p)
+    positions = []
+    j = len(p)
+    i = max(k for k in range(len(n)) if rows[k][j] == cost)
+    while j:
+        positions.append(i)
+        if j > 1 and i > 0 and rows[i - 1][j - 1] == cost:  # the run continues to the left
+            i -= 1
+        else:  # this run started here: the rest is matched, in one run fewer, further left
+            cost -= 1
+            if j > 1:
+                i = max(k for k in range(i) if rows[k][j - 1] == cost)
+        j -= 1
+    return positions[::-1]
 
 
 def colorized(name: str, pattern: str, on: str = HIGHLIGHT, off: str = RESET) -> str:
