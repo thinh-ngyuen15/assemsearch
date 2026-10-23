@@ -42,6 +42,7 @@ class Segment:
     file_offset: int | None
     sections: list[Section] = field(default_factory=list)
     executable: bool = False
+    writable: bool = False
     references_to: dict[int, set[int]] = field(default_factory=dict, repr=False)
     references_from: dict[int, set[int]] = field(default_factory=dict, repr=False)
     data_references: set[tuple[int, int]] = field(default_factory=set, repr=False)
@@ -522,13 +523,19 @@ class DisassembledFile:
         return sorted(self.tags)
 
     def add_tag(self, tag: str, address: int) -> None:
+        if not tag:
+            raise ValueError("a tag needs a name")
         self.tags.setdefault(tag, set()).add(address)
         procedure = self.procedures.get(address)
         if procedure is not None:
             procedure.tags.add(tag)
 
     def remove_tag(self, tag: str, address: int) -> None:
-        self.tags.get(tag, set()).discard(address)
+        addresses = self.tags.get(tag)
+        if addresses is not None:
+            addresses.discard(address)
+            if not addresses:  # a tag on nothing is gone
+                del self.tags[tag]
         procedure = self.procedures.get(address)
         if procedure is not None:
             procedure.tags.discard(tag)

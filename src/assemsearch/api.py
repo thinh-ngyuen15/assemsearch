@@ -142,8 +142,9 @@ class Segment:
         return [(s, a) for a, s in self._strings()]
 
     def getNextAddressWithType(self, addr: int, typeValue: int) -> int:
-        """The search begins at the given address; BAD_ADDRESS when nothing is found."""
-        return self._doc._document.find_next_address_of_type(addr, ByteType(typeValue))
+        """The search begins at the given address and stays in this segment; BAD_ADDRESS when nothing is found."""
+        found = self._doc._document.find_next_address_of_type(addr, ByteType(typeValue))
+        return found if found != BAD_ADDRESS and self._in(found) else BAD_ADDRESS
 
     def getReferencesOfAddress(self, addr: int) -> list[int]:
         return self._file.references_to(addr)
@@ -174,12 +175,20 @@ class Document:
 
     @classmethod
     def open(cls, path: str, restore: bool = True, **options) -> "Document":
-        """Loads and analyses ``path``; ``restore`` reapplies a saved ``.asdb`` like the shell does."""
+        """Loads and analyses ``path``; ``restore`` reapplies a saved ``.asdb`` like the shell does.
+
+        A database saved for different contents of the binary is not applied (a warning is issued).
+        """
+        import warnings
+
         from assemsearch import database
         from assemsearch.loaders import load_file
         file = load_file(path, **options)
         if restore:
-            database.load(file)
+            try:
+                database.load(file)
+            except database.DatabaseMismatch as error:
+                warnings.warn(str(error), stacklevel=2)
         return cls(_Document(file))
 
     def saveDatabase(self, path: str | None = None) -> str:

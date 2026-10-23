@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import bisect
 import re
 import struct
 
 import capstone
 
 from assemsearch.model import DataItem, DisassembledFile, Instruction, Section
-from assemsearch.cfg import build_procedures
+from assemsearch.cfg import ARM_B_NON_BRANCHES, build_procedures
 from assemsearch.objc import parse_objc_metadata
 from assemsearch.types import BAD_ADDRESS, ByteType
 
@@ -60,7 +61,8 @@ def is_branch(cpu: str, mnemonic: str) -> bool:
     if cpu == "arm64":
         return mnemonic in _ARM64_BRANCHES or mnemonic.startswith("b.") or mnemonic in ("br", "blr", "ret")
     if cpu == "arm":
-        return mnemonic in ("b", "bl", "bx", "blx") or (mnemonic.startswith("b") and len(mnemonic) == 3)
+        return mnemonic in ("b", "bl", "bx", "blx") or (mnemonic.startswith("b") and len(mnemonic) == 3
+                                                         and mnemonic not in ARM_B_NON_BRANCHES)
     return mnemonic in _X86_JUMPS or mnemonic.startswith("j") or mnemonic.startswith("ret")
 
 
@@ -80,6 +82,10 @@ def branch_target(cpu: str, ins: Instruction) -> int | None:
 
 def analyze(doc: DisassembledFile) -> None:
     code_sections = [s for s in doc.all_sections() if is_code_section(doc, s)]
+    if doc.file_type == "Raw":  # raw sections are code and data at once: strings first, then the code around them
+        for section in code_sections:
+            if section.file_offset is not None:
+                _find_strings(doc, section)
     for section in code_sections:
         _disassemble_section(doc, section)
     for section in doc.all_sections():
@@ -111,9 +117,16 @@ def _disassemble_section(doc: DisassembledFile, section: Section) -> None:
     data = section.segment.read(section.start, section.length)
     # Decoding restarts at every known function start, so data or padding before a function
     # cannot shift the decoding of variable-length (x86) code past its first instruction.
-    known = sorted({a - section.start for a in doc.function_starts | {doc.entry_point} if section.contains(a)})
-    bounds = [0] + [b for b in known if b] + [len(data)]
+    known = {a - section.start for a in doc.function_starts | {doc.entry_point} if section.contains(a)}
+    # Data already found in the section (raw files: strings) is skipped, and decoding restarts after it.
+    holes = {a - section.start: item.length for a, item in doc.data_items.items() if section.contains(a)}
+    known |= set(holes) | {start + length for start, length in holes.items()}
+    bounds = sorted({0, len(data)} | {b for b in known if 0 < b < len(data)})
+    hole_starts = sorted(holes)
     for run_start, run_end in zip(bounds, bounds[1:]):
+        i = bisect.bisect_right(hole_starts, run_start)
+        if i and run_start < hole_starts[i - 1] + holes[hole_starts[i - 1]]:
+            continue
         offset = run_start
         while offset < run_end:
             last = offset
@@ -468,9 +481,13 @@ def _track_x86(doc: DisassembledFile, address: int, ins: Instruction, branch: bo
             return
         size = _X86_SIZE.search(ins.op_str)
         if size and doc.has_segment_at(location):
-            floating = mnemonic.endswith(("sd", "ss")) and not mnemonic.startswith("cvtsi")
-            width = 4 if floating and mnemonic.endswith("ss") else _X86_WIDTHS[size.group(1)]
-            _note_access(accesses, location, (width, floating, False))
+            width = _X86_WIDTHS[size.group(1)]
+            base = mnemonic.removeprefix("v")
+            if base.startswith("cvt"):  # the memory operand is the source: cvtsd2ss reads a double
+                floating = base.removeprefix("cvtt").removeprefix("cvt").split("2")[0] in ("sd", "ss")
+            else:
+                floating = base.endswith(("sd", "ss"))
+            _note_access(accesses, location, (width, floating and width in (4, 8), False))
     # x86 switch tables ([table + index*4]) are not labelled: labelling all of them adds
     # far more noise than useful names.
     if dest and not mnemonic.startswith(_X86_NO_WRITE):

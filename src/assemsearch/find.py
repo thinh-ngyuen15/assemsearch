@@ -46,6 +46,10 @@ INVALID_NUMBER = "You entered an invalid number."
 INVALID_REGEXP = "You entered an invalid hexadecimal regular expression string."
 
 
+# How far past a search range a hex-regex match that starts in it may extend.
+REGEXP_OVERLAP = 0x10000
+
+
 class FindInputError(ValueError):
     pass
 
@@ -169,7 +173,10 @@ class SearchEngine:
 
     def find_next(self, address: int, context: FindContext, cancelation: CancelCheck | None = None,
                   dispatcher: Dispatcher | None = None) -> AddressRange | None:
-        start = self.doc.next_address_of_virtual_address(address)
+        if FindMode(context.mode) in (FindMode.STRING_IN_ASSEMBLY, FindMode.STRING_IN_COMMENTS):
+            start = self.doc.next_address_of_virtual_address(address)
+        else:  # byte matches can sit anywhere inside an object, and several in the same one
+            start = address + 1
         return self._find(start, context, False, cancelation or (lambda: False), dispatcher)
 
     def find_previous(self, address: int, context: FindContext, cancelation: CancelCheck | None = None,
@@ -196,10 +203,18 @@ class SearchEngine:
                 return hit
         return None
 
+    @staticmethod
+    def _read_with_overlap(item: SectionAndRange, overlap: int) -> bytes:
+        """The range's bytes plus up to ``overlap`` bytes after it (within the segment), so a match
+        that starts in the range but ends past it (the cursor, a section boundary) is still seen."""
+        segment, rng = item.segment, item.range
+        return segment.read(rng.location, rng.length + max(0, min(overlap, segment.end - rng.end)))
+
     # Raw bytes: ASCII String, Hexadecimal Value, Find Number
     def _search_bytes(self, item: SectionAndRange, context: FindContext, backwards: bool) -> AddressRange | None:
-        segment, rng = item.segment, item.range
-        data = segment.read(rng.location, rng.length)
+        rng = item.range
+        # With len(needle) - 1 extra bytes, only matches starting inside the range fit.
+        data = self._read_with_overlap(item, len(context.data) - 1)
         options = 0
         if context.mode == FindMode.ASCII_STRING and not context.case_sensitive:
             options |= bytesearch.CASE_INSENSITIVE
@@ -212,17 +227,17 @@ class SearchEngine:
 
     def _search_regexp(self, item, dfa: FastDFA, backwards, cancelled) -> AddressRange | None:
         rng = item.range
-        data = item.segment.read(rng.location, rng.length)
+        data = self._read_with_overlap(item, REGEXP_OVERLAP)
         first = dfa.first_bytes()
         allowed = bytearray(256)
         for byte in first:
             allowed[byte] = 1
-        positions = range(len(data) - 1, -1, -1) if backwards else range(len(data))
+        positions = range(rng.length - 1, -1, -1) if backwards else range(rng.length)
         for count, offset in enumerate(positions):
-            if not allowed[data[offset]]:
-                continue
             if count & 0xFFF == 0 and cancelled():
                 raise Cancelled()
+            if not allowed[data[offset]]:
+                continue
             length = dfa.recognize(data, offset)
             if length:
                 return AddressRange(rng.location + offset, length)

@@ -20,6 +20,24 @@ def default_path() -> Path:
     return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "assemsearch" / "preferences.json"
 
 
+# Allowed values of the numeric options (Find modes, number widths, Go To offset modes).
+_CHOICES = {"last_find_mode": range(6), "last_find_number_length": (8, 16, 32, 64),
+            "last_goto_file_offset_mode": range(3)}
+
+
+def _valid(key: str, value, default) -> bool:
+    """A stored value is kept only if it has the default's type (and an allowed value)."""
+    if isinstance(default, bool) or isinstance(value, bool):
+        return isinstance(value, bool) and isinstance(default, bool)
+    if not isinstance(value, type(default)):
+        return False
+    if key in _CHOICES:
+        return value in _CHOICES[key]
+    if key == "recent_searches":
+        return all(isinstance(terms, list) and all(isinstance(t, str) for t in terms) for terms in value.values())
+    return True
+
+
 @dataclass
 class Preferences:
     enable_fuzzy_search: bool = True
@@ -42,8 +60,11 @@ class Preferences:
             stored = json.loads(path.read_text())
         except (OSError, ValueError):
             return prefs
+        if not isinstance(stored, dict):
+            return prefs
+        defaults = cls()
         for key, value in stored.items():
-            if key in cls.__dataclass_fields__ and key != "path":
+            if key in cls.__dataclass_fields__ and key != "path" and _valid(key, value, getattr(defaults, key)):
                 setattr(prefs, key, value)
         return prefs
 

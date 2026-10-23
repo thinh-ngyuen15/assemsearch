@@ -87,13 +87,33 @@ class MCPServer:
         if name not in self.tools:
             return {"content": [{"type": "text", "text": f"Unknown tool {name}"}], "isError": True}
         try:
+            self._check_arguments(self.tools[name][1], arguments)
             value = self.tools[name][2](**arguments)
         except ToolError as error:
             return {"content": [{"type": "text", "text": str(error)}], "isError": True}
-        except TypeError as error:
-            return {"content": [{"type": "text", "text": f"Invalid arguments: {error}"}], "isError": True}
+        except Exception as error:  # a failure inside the tool, not the caller's arguments
+            return {"content": [{"type": "text", "text": f"Internal error: {type(error).__name__}: {error}"}],
+                    "isError": True}
         text = value if isinstance(value, str) else json.dumps(value)
         return {"content": [{"type": "text", "text": text}]}
+
+    @staticmethod
+    def _check_arguments(schema: dict, arguments: Any) -> None:
+        """Arguments against the tool's ``inputSchema``: an object, known names, required ones, JSON types."""
+        if not isinstance(arguments, dict):
+            raise ToolError("Invalid arguments: expected an object")
+        properties = schema.get("properties", {})
+        unknown = sorted(set(arguments) - set(properties))
+        if unknown:
+            raise ToolError(f"Invalid arguments: unknown {', '.join(unknown)}")
+        missing = [n for n in schema.get("required", ()) if arguments.get(n) is None]
+        if missing:
+            raise ToolError(f"Invalid arguments: missing {', '.join(missing)}")
+        types = {"string": str, "boolean": bool}
+        for key, value in arguments.items():
+            expected = types.get(properties[key].get("type"))
+            if value is not None and expected is not None and not isinstance(value, expected):
+                raise ToolError(f"Invalid arguments: {key} must be a {properties[key]['type']}")
 
     def serve(self, stdin: TextIO = sys.stdin, stdout: TextIO = sys.stdout) -> None:
         for line in stdin:
@@ -244,7 +264,7 @@ class MCPServer:
         def list_segments(document=None):
             doc = self._document(document)
             return [{"name": s.name, "start": format_address(s.start), "end": format_address(s.end),
-                     "writable": not s.executable, "executable": s.executable,
+                     "writable": s.writable, "executable": s.executable,
                      "sections": [{"name": x.name, "start": format_address(x.start), "end": format_address(x.end)}
                                   for x in s.sections]} for s in doc.file.segments]
 
@@ -359,5 +379,7 @@ class MCPServer:
 def serve(paths: list[str], arch: str | None = None) -> None:
     workspace = Workspace()
     for path in paths:
-        workspace.open(path, arch=arch)
+        document = workspace.open(path, arch=arch)
+        if document.database_warning:  # stdout carries the protocol
+            print(f"assemsearch: warning: {document.database_warning}", file=sys.stderr)
     MCPServer(workspace).serve()

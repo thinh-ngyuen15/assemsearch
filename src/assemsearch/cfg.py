@@ -30,6 +30,8 @@ NORETURN = {
     "_swift_unexpectedError", "_swift_errorInMain", "_dispatch_main", "_xpc_main", "_err", "_errx",
     "___cxa_bad_cast", "___cxa_bad_typeid", "__ZSt9terminatev", "_swift_dynamicCastFailure",
 }
+# 32-bit ARM mnemonics of three letters starting with "b" that are not conditional branches.
+ARM_B_NON_BRANCHES = ("bic", "bfc", "bfi", "bkpt")
 MAX_UNBOUNDED_CASES = 256
 ARM64_PADDING = {"nop", "brk", "udf"}
 X86_PADDING = {"nop", "int3", "ud2", "hlt"}
@@ -121,7 +123,7 @@ class ControlFlow:
             return ("call", target) if target is not None else ("icall", None)
         if mnemonic == "b":
             return "jump", target
-        if mnemonic.startswith("b") and len(mnemonic) == 3 and mnemonic not in ("bic", "bfc", "bfi", "bkpt"):
+        if mnemonic.startswith("b") and len(mnemonic) == 3 and mnemonic not in ARM_B_NON_BRANCHES:
             return "cond", target
         if mnemonic == "bx":
             return ("stop", None) if op_str == "lr" else ("ijump", None)
@@ -134,7 +136,9 @@ class ControlFlow:
     def noreturn(self, target: int) -> bool:
         known = self._noreturn.get(target)
         if known is None:
-            name = (self.doc.names.name_for_address(target) or "").removeprefix("imp___stubs_")
+            name = (self.doc.names.name_for_address(target) or "").removeprefix("imp___stubs_").removeprefix("imp___got_")
+            if name and self.doc.file_type != "Mach-O":  # NORETURN is spelled with Mach-O's leading underscore
+                name = "_" + name
             known = name in NORETURN or ("s5NeverO" in name and name.endswith(("F", "FZ")))
             self._noreturn[target] = known
         return known

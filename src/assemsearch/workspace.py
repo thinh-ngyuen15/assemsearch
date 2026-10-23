@@ -20,9 +20,14 @@ class Workspace:
         from assemsearch import database
 
         disassembled = load_file(path, arch=arch, raw=raw, base=base)
+        warning = ""
         if restore:
-            database.load(disassembled)
+            try:
+                database.load(disassembled)
+            except database.DatabaseMismatch as error:
+                warning = str(error)
         document = Document(disassembled, self.prefs)
+        document.database_warning = warning
         self.documents.append(document)
         self.current = document
         return document

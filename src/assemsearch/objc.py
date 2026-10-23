@@ -179,11 +179,12 @@ class ObjCMetadata:
             return
         read = self.read
         category = read.string(read.pointer(address))
-        owner = f"{self.class_name(address + 8)}({category})"
-        label = f"__objc_cat_{category}"
-        self.method_list(read.pointer(address + 16), owner, "-", f"{label}_inst_methods")
-        self.method_list(read.pointer(address + 24), owner, "+", f"{label}_class_methods")
-        self.simple_list(read.pointer(address + 40), 16, f"{label}_inst_properties")
+        cls = self.class_name(address + 8) or "?"  # an unresolved class still gets its methods named
+        owner = f"{cls}({category})" if category else cls
+        label = f"__objc_cat_{category}" if category else None
+        self.method_list(read.pointer(address + 16), owner, "-", label and f"{label}_inst_methods")
+        self.method_list(read.pointer(address + 24), owner, "+", label and f"{label}_class_methods")
+        self.simple_list(read.pointer(address + 40), 16, label and f"{label}_inst_properties")
         _structure(self.doc, address, 48)
 
     def protocol(self, address: int | None) -> None:
