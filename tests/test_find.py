@@ -26,12 +26,18 @@ class TestInputParsing:
         with pytest.raises(FindInputError, match=INVALID_HEX):
             data_to_find_from_string(text, FindMode.HEX_VALUE)
 
-    def test_numbers_truncate_and_swap(self):
+    def test_numbers_swap(self):
         assert data_to_find_from_string("0xdeadbeef", FindMode.NUMBER, 32, True) == b"\xef\xbe\xad\xde"
         assert data_to_find_from_string("0xdeadbeef", FindMode.NUMBER, 32, False) == b"\xde\xad\xbe\xef"
-        assert data_to_find_from_string("0x1234", FindMode.NUMBER, 8) == b"\x34"
         assert data_to_find_from_string("258", FindMode.NUMBER, 16) == b"\x02\x01"
         assert data_to_find_from_string("1", FindMode.NUMBER, 64) == b"\x01" + b"\x00" * 7
+        assert data_to_find_from_string("-1", FindMode.NUMBER, 16) == b"\xff\xff"  # two's complement
+        assert data_to_find_from_string("010", FindMode.NUMBER, 8) == b"\x0a"  # leading zero: decimal
+
+    @pytest.mark.parametrize("text, bits", [("0x1234", 8), ("0x12345", 16), ("-129", 8), ("0x1" + "0" * 16, 64)])
+    def test_numbers_that_do_not_fit_are_rejected(self, text, bits):
+        with pytest.raises(FindInputError, match=INVALID_NUMBER):
+            data_to_find_from_string(text, FindMode.NUMBER, bits)
 
     def test_invalid_number_and_regexp(self):
         with pytest.raises(FindInputError, match=INVALID_NUMBER):

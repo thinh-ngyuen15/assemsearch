@@ -81,11 +81,17 @@ def data_to_find_from_string(text: str, mode: int, number_length: int = 32,
             raise FindInputError(INVALID_HEX)
         return bytes.fromhex(cleaned)
     if mode == FindMode.NUMBER:
+        text = text.strip()
         try:
-            value = int(text.strip(), 0)
-        except ValueError as error:
-            raise FindInputError(INVALID_NUMBER) from error
+            value = int(text, 0)
+        except ValueError:
+            try:
+                value = int(text, 10)  # int(x, 0) rejects leading zeros ("010")
+            except ValueError as error:
+                raise FindInputError(INVALID_NUMBER) from error
         bits = number_length if number_length in (8, 16, 32, 64) else 32
+        if not -(1 << (bits - 1)) <= value < 1 << bits:  # negative values are two's complement
+            raise FindInputError(INVALID_NUMBER)
         value &= (1 << bits) - 1
         fmt = {8: "B", 16: "H", 32: "I", 64: "Q"}[bits]
         return struct.pack(("<" if little_endian else ">") + fmt, value)
