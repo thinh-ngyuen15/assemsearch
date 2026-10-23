@@ -8,8 +8,17 @@ from assemsearch.model import DisassembledFile, ExportedSymbol, ImportedSymbol, 
 
 MACHINES = {3: "x86", 62: "x86_64", 40: "arm", 183: "arm64"}
 SHT_SYMTAB, SHT_STRTAB, SHT_RELA, SHT_NOBITS, SHT_DYNSYM, SHT_REL = 2, 3, 4, 8, 11, 9
-SHF_ALLOC, SHF_EXECINSTR = 0x2, 0x4
+SHF_WRITE, SHF_ALLOC, SHF_EXECINSTR = 0x1, 0x2, 0x4
 PT_LOAD = 1
+PF_X, PF_W = 0x1, 0x2
+# Lazy-binding PLT layout per CPU: (size of the PLT0 header in .plt, size of each entry).
+# .plt.sec (IBT) has no header and 16-byte entries.
+PLT_LAYOUT = {"x86_64": (16, 16), "x86": (16, 16), "arm64": (32, 16), "arm": (20, 12)}
+
+
+def _cstr(blob: bytes, offset: int) -> str:
+    end = blob.find(b"\0", offset)
+    return blob[offset:end if end >= 0 else len(blob)].decode("utf-8", "replace")
 STT_FUNC, STT_OBJECT, STT_SECTION, STT_FILE = 2, 1, 3, 4
 STB_LOCAL = 0
 ET_REL = 1
@@ -42,7 +51,7 @@ def load_elf(path: str, data: bytes) -> DisassembledFile:
                                  "align", "entsize"), fields)))
     shstr = data[headers[e_shstrndx]["offset"]:][:headers[e_shstrndx]["size"]] if headers else b""
     for h in headers:
-        h["sname"] = shstr[h["name"]:shstr.find(b"\0", h["name"])].decode()
+        h["sname"] = _cstr(shstr, h["name"])
 
     # Relocatable objects have all sections at address 0: lay them out one after another.
     if e_type == ET_REL:
@@ -65,7 +74,8 @@ def load_elf(path: str, data: bytes) -> DisassembledFile:
             if p_type != PT_LOAD or not p_memsz:
                 continue
             doc.add_segment(Segment(f"LOAD{len(doc.segments)}", p_vaddr, p_memsz,
-                                    data[p_off:p_off + p_filesz], p_off, executable=bool(p_flags & 1)))
+                                    data[p_off:p_off + p_filesz], p_off, executable=bool(p_flags & PF_X),
+                                    writable=bool(p_flags & PF_W)))
         for index, h in enumerate(headers):
             if not h["flags"] & SHF_ALLOC or not h["size"]:
                 continue
@@ -83,7 +93,7 @@ def load_elf(path: str, data: bytes) -> DisassembledFile:
             nobits = h["type"] == SHT_NOBITS
             body = b"" if nobits else data[h["offset"]:h["offset"] + h["size"]]
             segment = Segment(h["sname"], h["addr"], h["size"], body, None if nobits else h["offset"],
-                              executable=bool(h["flags"] & SHF_EXECINSTR))
+                              executable=bool(h["flags"] & SHF_EXECINSTR), writable=bool(h["flags"] & SHF_WRITE))
             section = Section(h["sname"], h["addr"], h["size"], None if nobits else h["offset"], flags=h["flags"])
             segment.add_section(section)
             doc.add_segment(segment)
@@ -107,7 +117,7 @@ def _load_symbols(doc, data, h, headers, sections, is64, end, relocatable):
             st_name, st_info, _o, st_shndx, st_value, _sz = struct.unpack(end + "IBBHQQ", raw)
         else:
             st_name, st_value, _sz, st_info, _o, st_shndx = struct.unpack(end + "IIIBBH", raw)
-        name = strings[st_name:strings.find(b"\0", st_name)].decode("utf-8", "replace")
+        name = _cstr(strings, st_name)
         kind, bind = st_info & 0xF, st_info >> 4
         if not name or kind in (STT_SECTION, STT_FILE):
             continue
@@ -129,7 +139,9 @@ def _load_symbols(doc, data, h, headers, sections, is64, end, relocatable):
 
 
 def _load_plt_relocations(doc, data, headers, is64, end):
-    """Name GOT slots after the imported symbol they hold (.rela.plt / .rela.dyn)."""
+    """Name GOT slots after the imported symbol they hold (.rela.plt / .rela.dyn), and the PLT
+    stubs that code calls after the same symbols, in relocation order."""
+    plt_names: list[str] = []
     for h in headers:
         if h["type"] not in (SHT_RELA, SHT_REL) or not h["sname"].startswith((".rela.plt", ".rel.plt")):
             continue
@@ -148,9 +160,32 @@ def _load_plt_relocations(doc, data, headers, is64, end):
                 symindex = info >> 8
             sym = data[symtab["offset"] + symindex * symsize:][:symsize]
             st_name = struct.unpack(end + "I", sym[:4])[0]
-            name = strings[st_name:strings.find(b"\0", st_name)].decode()
+            name = _cstr(strings, st_name)
+            plt_names.append(name)
             if name and doc.has_segment_at(offset):
                 doc.set_name(offset, f"imp___got_{name}")
                 for imported in doc.imports:
                     if imported.name == name and imported.address is None:
                         imported.address = offset
+    name_plt_stubs(doc, headers, plt_names)
+
+
+def name_plt_stubs(doc: DisassembledFile, headers: list[dict], names: list[str]) -> None:
+    """``imp___stubs_<symbol>`` for each PLT entry (``.plt.sec`` when present, else ``.plt`` after PLT0).
+
+    Entry i jumps through the GOT slot of relocation i of ``.rela.plt``.
+    """
+    layout = PLT_LAYOUT.get(doc.cpu)
+    sections = {h["sname"]: h for h in headers}
+    if ".plt.sec" in sections:
+        plt, (header, entry) = sections[".plt.sec"], (0, 16)
+    elif ".plt" in sections and layout is not None:
+        plt, (header, entry) = sections[".plt"], layout
+    else:
+        return
+    for i, name in enumerate(names):
+        address = plt["addr"] + header + i * entry
+        if not name or address + entry > plt["addr"] + plt["size"] or not doc.has_segment_at(address):
+            continue
+        doc.set_name(address, f"imp___stubs_{name}")
+        doc.function_starts.add(address)

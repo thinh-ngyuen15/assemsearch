@@ -45,8 +45,20 @@ INDIRECT_SYMBOL_LOCAL = 0x80000000
 INDIRECT_SYMBOL_ABS = 0x40000000
 
 
+# More architectures than this means 0xCAFEBABE is a Java class file (the word is its version, 45+).
+MAX_FAT_ARCHS = 20
+
+
 def is_macho(data: bytes) -> bool:
-    return len(data) >= 4 and struct.unpack(">I", data[:4])[0] in (FAT_MAGIC, 0xCFFAEDFE, 0xCEFAEDFE)
+    if len(data) < 8:
+        return False
+    magic = struct.unpack(">I", data[:4])[0]
+    if magic != FAT_MAGIC:
+        return magic in (0xCFFAEDFE, 0xCEFAEDFE)
+    count = struct.unpack(">I", data[4:8])[0]
+    if not 0 < count < MAX_FAT_ARCHS or len(data) < 8 + 20 * count:
+        return False
+    return all(offset + size <= len(data) for _cpu, offset, size in fat_slices(data))
 
 
 def fat_slices(data: bytes) -> list[tuple[str, int, int]]:
@@ -155,7 +167,7 @@ def load_macho(path: str, data: bytes, arch: str | None = None) -> DisassembledF
 
     symbols = _load_symbols(doc, image, symtab, sections_by_index, is64) if symtab else []
     if dysymtab is not None:
-        _load_indirect_symbols(doc, image, dysymtab, symbols, sections_by_index)
+        _load_indirect_symbols(doc, image, dysymtab, symbols, sections_by_index, is64)
     if len(libraries) == 1:
         for imported in doc.imports:
             imported.library = libraries[0]
@@ -283,7 +295,7 @@ def _load_segment(doc: DisassembledFile, image: bytes, body: bytes, is64: bool) 
     sections: list[Section] = []
     keep = vmsize > 0 and initprot != 0  # __LINKEDIT is kept (as a segment without sections)
     segment = Segment(name, vmaddr, vmsize, image[fileoff:fileoff + filesize], fileoff,
-                      executable=bool(initprot & 4))
+                      executable=bool(initprot & 4), writable=bool(initprot & 2))
     for i in range(nsects):
         raw = body[sect_pos + i * sect_size:sect_pos + (i + 1) * sect_size]
         if is64:
@@ -333,7 +345,7 @@ def _load_symbols(doc, image, symtab, sections_by_index, is64):
     return symbols
 
 
-def _load_indirect_symbols(doc, image, dysymtab, symbols, sections_by_index):
+def _load_indirect_symbols(doc, image, dysymtab, symbols, sections_by_index, is64=True):
     indirectsymoff, nindirectsyms = dysymtab[12], dysymtab[13]
     table = struct.unpack(f"<{nindirectsyms}I", image[indirectsymoff:indirectsymoff + 4 * nindirectsyms])
     imports_by_name = {imp.name: imp for imp in doc.imports}
@@ -342,7 +354,7 @@ def _load_indirect_symbols(doc, image, dysymtab, symbols, sections_by_index):
         if kind == S_SYMBOL_STUBS:
             stride = section.reserved2  # type: ignore[attr-defined]
         elif kind in (S_NON_LAZY_SYMBOL_POINTERS, S_LAZY_SYMBOL_POINTERS):
-            stride = 8
+            stride = 8 if is64 else 4
         else:
             continue
         if not stride or not doc.has_segment_at(section.start):

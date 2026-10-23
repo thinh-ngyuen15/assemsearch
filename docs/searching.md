@@ -47,7 +47,9 @@ An odd number of digits or a non-hex character is an error
 ### `--mode number`: an integer in memory
 
 Finds a number in its stored form. Write it in decimal (`42`), hex (`0x2a`), octal (`0o52`)
-or binary (`0b101010`); negative numbers are stored as two's complement.
+or binary (`0b101010`); negative numbers are stored as two's complement. A leading zero
+is decimal (`010` is 10). A number that does not fit in `--bits` is rejected ("You entered
+an invalid number.") rather than cut to its low bytes.
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -136,7 +138,7 @@ necessarily next to each other. Each result gets a score, and lower is better:
 | Score | Meaning | `vlic` against `_validate_license` |
 |---|---|---|
 | 1 | The pattern appears as is (ignoring case) | |
-| k | The pattern's letters appear in k separate runs | `v`·`li`…`c`: 3 |
+| k | The pattern's letters appear in k separate runs at best | `v`…`lic`: 2 |
 | no result | Letters missing or out of order | |
 
 Results are sorted by score. `--strict` (one-shot) or `prefs fuzzy off` (shell) switches to

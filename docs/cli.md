@@ -26,7 +26,8 @@ assemsearch open /Applications/Calculator.app/Contents/MacOS/Calculator
 ```
 
 If a saved database (`BINARY.asdb`) exists, your names, comments, tags and bookmarks are
-restored. See [Interactive shell: save](shell.md#annotate).
+restored. A database saved for different contents of the binary (it was rebuilt or
+replaced) is not applied, and a warning says so. See [Interactive shell: save](shell.md#annotate).
 
 ## `open`: interactive shell
 

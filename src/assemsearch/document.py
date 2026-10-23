@@ -51,6 +51,7 @@ class Document:
         self.find_context: FindContext | None = None
         self.selection: AddressRange | None = None
         self.last_beep = ""
+        self.database_warning = ""  # set when a saved database was not restored (see database.load)
         start = disassembled_file.entry_point
         if start == BAD_ADDRESS:
             start = disassembled_file.min_address
@@ -119,8 +120,9 @@ class Document:
         return self.move_cursor_to_virtual_address(self.navigation.forward.pop())
 
     def goto_offset_in_procedure(self, offset: int) -> bool:
+        """``entry + offset``, which must be inside the procedure (whose blocks need not be contiguous)."""
         procedure = self.current_procedure
-        if procedure is None or not 0 <= offset < procedure.length:
+        if procedure is None or offset < 0 or not procedure.contains(procedure.entry + offset):
             self.beep("no procedure / offset out of range")
             return False
         return self.goto_virtual_address(procedure.entry + offset)

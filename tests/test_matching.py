@@ -16,9 +16,17 @@ class TestFuzzy:
         assert fuzzy.score("_validate_license", "LICENSE") == 1
 
     def test_score_counts_contiguous_runs(self):
-        assert fuzzy.score("_validate_license", "vlic") == 3  # V | LI | C
+        assert fuzzy.score("_validate_license", "vlic") == 2  # V | LIC (not the greedy V | LI | C)
         assert fuzzy.score("abcdef", "abef") == 2
         assert fuzzy.score("abcdef", "ace") == 3
+        assert fuzzy.score("ab_c_abcxd", "abcd") == 2  # ABC | D
+
+    def test_highlight_follows_the_fewest_runs(self):
+        assert fuzzy.matched_positions("_validate_license", "vlic") == [1, 10, 11, 12]
+        assert fuzzy.matched_positions("ab_c_abcxd", "abcd") == [5, 6, 7, 9]
+
+    def test_case_folding_keeps_positions(self):
+        assert fuzzy.colorized("Straße_s", "ES", "<", ">") == "Straß<e>_<s>"  # ß does not shift the marks
 
     def test_no_match_is_zero(self):
         assert fuzzy.score("abc", "abd") == 0

@@ -189,7 +189,7 @@ class _Parser:
             if self.peek() == "-":
                 self.index += 1
                 high = self.peek()
-                if high not in HEX or not high:
+                if high not in HEX or not high or HEX.index(high) < HEX.index(low):
                     raise HexRegexError("invalid range")
                 self.index += 1
                 values.update(range(HEX.index(low), HEX.index(high) + 1))

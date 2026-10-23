@@ -21,7 +21,7 @@ from assemsearch import __version__, database, fuzzy
 from assemsearch.debugger import DebuggerSession
 from assemsearch.document import Document
 from assemsearch.find import MODE_TITLES, FindContext, FindInputError, FindMode, SearchEngine
-from assemsearch.goto import GotoError, GotoType, parse_hex_address
+from assemsearch.goto import GotoError, GotoType, parse_address_string, parse_hex_address
 from assemsearch.lists import ListOfAddresses, exports_window, imports_window, sections_list, segments_list
 from assemsearch.listing import lines_for_virtual_address
 from assemsearch.palette import Command, CommandPalette
@@ -161,6 +161,8 @@ class Shell(cmd.Cmd):
         args = parser.parse_args(_split(arg))
         document = self.ws.open(args.path, arch=args.arch, raw=args.raw, base=args.base)
         self.palette.current_document = document
+        if document.database_warning:
+            print(f"warning: {document.database_warning}")
         print(f"loaded {document.display_name}: {document.file.cpu} {document.file.file_type}, "
               f"{len(document.file.procedures)} procedures, {len(document.file.strings)} strings, "
               f"{len(document.file.names)} names")
@@ -319,11 +321,14 @@ class Shell(cmd.Cmd):
     def do_palette(self, arg):
         """palette QUERY [!N] — Search Anything: @symbols, "strings, #documents, otherwise commands.
         Append `!N` to execute result N."""
-        query, _, pick = arg.partition("!")
-        query = query.rstrip() if pick else arg
+        query, bang, pick = arg.rpartition("!")
+        if bang and pick.strip().isdigit():  # only a trailing `!N` picks; any other `!` is part of the query
+            query = query.rstrip()
+        else:
+            query, pick = arg, ""
         self.palette.documents, self.palette.current_document = self.ws.documents, self.ws.current
         results = self.palette.search(query)
-        if pick.strip().isdigit():
+        if pick:
             index = int(pick)
             if index < len(results):
                 outcome = self.palette.execute(results[index])
@@ -410,9 +415,9 @@ class Shell(cmd.Cmd):
         """refsto [ADDRESS] [/ FILTER] — References To Highlighted Word (or ADDRESS)."""
         target, _, pattern = arg.partition("/")
         if target.strip():
-            address = self.doc.file.find_virtual_address_named(target.strip())
+            address = parse_address_string(self.doc.file, target.strip())
             if address == BAD_ADDRESS:
-                address = parse_hex_address(target.strip())
+                raise ValueError(f"invalid address {target.strip()}")
             lst = ListOfAddresses(self.doc.references_to_rows(address), f"References to {format_address(address)}",
                                   self.doc.prefs)
         else:
@@ -543,6 +548,8 @@ class Shell(cmd.Cmd):
     def do_tag(self, arg):
         """tag NAME — tag the cursor address (or `tag -NAME` to remove)."""
         name = arg.strip()
+        if not name.lstrip("-"):
+            raise ValueError("usage: tag NAME | tag -NAME")
         if name.startswith("-"):
             self.doc.file.remove_tag(name[1:], self.doc.cursor)
         else:
@@ -599,7 +606,9 @@ class Shell(cmd.Cmd):
 
 def _open(args) -> Workspace:
     workspace = Workspace(Preferences.load())
-    workspace.open(args.binary, arch=args.arch, raw=args.raw, base=args.base)
+    document = workspace.open(args.binary, arch=args.arch, raw=args.raw, base=args.base)
+    if document.database_warning:
+        print(f"assemsearch: warning: {document.database_warning}", file=sys.stderr)
     return workspace
 
 
@@ -736,9 +745,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{format_address(document.cursor)}  {document.file.friendly_name_for_virtual_address(document.cursor)}")
         return 0
     if args.command == "xrefs":
-        address = document.file.find_virtual_address_named(args.address)
+        address = parse_address_string(document.file, args.address)
         if address == BAD_ADDRESS:
-            address = parse_hex_address(args.address)
+            print(f"invalid address {args.address}", file=sys.stderr)
+            return 1
         for row in document.references_to_rows(address):
             print(f"{row['addressRepresentation']}  {row['comment']}")
         return 0

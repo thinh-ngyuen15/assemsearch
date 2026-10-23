@@ -9,7 +9,7 @@ it.
 | Address-space engine: section ranges rotated around the cursor, raw bytes (`locateData` options `0x1/0x2/0x4`), assembly text, comments | `find.py`, `bytesearch.py`, `listing.py` | |
 | Hex regular expressions over nibbles: parser → Thompson NFA → subset-construction DFA → dense table recognizer | `hexregex.py` | `find --mode regex`; `assemsearch hexre` (DOT export) |
 | Sidebar Labels / Proc. / Str search, ranking, Tag Scope, sort descriptors, recent searches | `sidebar.py` | `symbols`, `scope`, `recents`; `assemsearch symbols` |
-| Fuzzy scorer (1 = substring, k = k−1 insertions), strict mode, highlighting, `FuzzyPredicate` | `fuzzy.py` | `prefs fuzzy on/off` |
+| Fuzzy scorer (1 = substring, k = fewest runs, k−1 insertions), strict mode, highlighting, `FuzzyPredicate` | `fuzzy.py` | `prefs fuzzy on/off` |
 | Command palette: commands, `@` symbols, `"` strings, `#` documents | `palette.py` | `palette QUERY [!N]` |
 | Go To address/symbol (name → `$name` → hex → decimal), file offset, global file offset, procedure offset, top of procedure, address at cursor, Back/Forward, `--jump-to` (hex only) | `goto.py`, `document.py` | `goto`, `offset`, `procoff`, `top`, `follow`, `back`, `forward`, `history`; `open -j` |
 | Filterable lists: references, segments, sections (match on address text or comment), imports/exports | `lists.py` | `segments`, `sections`, `imports`, `exports`, `refsto … / FILTER` |
